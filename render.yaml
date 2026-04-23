@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: swing-alpha-api
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: CORS_ORIGINS
+        sync: false   # Set this manually in Render dashboard to your Vercel URL
+    autoDeploy: true
