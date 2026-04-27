@@ -24,7 +24,10 @@ def fetch_ohlcv(ticker: str, period: str = "1y") -> Optional[pd.DataFrame]:
 
 
 def fetch_ohlcv_batch(tickers: list, period: str = "1y") -> dict:
-    """Download OHLCV for many tickers in a single API call."""
+    """Download OHLCV for many tickers. Tries batch first, falls back to individual calls."""
+    result = {}
+
+    # --- batch attempt (fastest when it works) ---
     try:
         raw = yf.download(
             tickers,
@@ -33,24 +36,32 @@ def fetch_ohlcv_batch(tickers: list, period: str = "1y") -> dict:
             auto_adjust=True,
             progress=False,
             group_by="ticker",
-            threads=True,
+            threads=False,      # more stable in containerised envs
         )
-        result = {}
-        if len(tickers) == 1:
-            df = raw[["Open", "High", "Low", "Close", "Volume"]].dropna()
-            if len(df) >= 30:
-                result[tickers[0]] = df
-        else:
-            for ticker in tickers:
-                try:
-                    df = raw[ticker][["Open", "High", "Low", "Close", "Volume"]].dropna()
-                    if len(df) >= 30:
-                        result[ticker] = df
-                except Exception:
-                    pass
-        return result
+        if not raw.empty:
+            if len(tickers) == 1:
+                df = raw[["Open", "High", "Low", "Close", "Volume"]].dropna()
+                if len(df) >= 30:
+                    result[tickers[0]] = df
+            else:
+                for ticker in tickers:
+                    try:
+                        df = raw[ticker][["Open", "High", "Low", "Close", "Volume"]].dropna()
+                        if len(df) >= 30:
+                            result[ticker] = df
+                    except Exception:
+                        pass
     except Exception:
-        return {}
+        pass
+
+    # --- individual fallback for any ticker the batch missed ---
+    missing = [t for t in tickers if t not in result]
+    for ticker in missing:
+        df = fetch_ohlcv(ticker, period)
+        if df is not None:
+            result[ticker] = df
+
+    return result
 
 
 def fetch_fundamentals(ticker: str) -> dict:
