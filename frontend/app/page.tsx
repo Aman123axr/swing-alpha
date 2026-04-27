@@ -83,6 +83,8 @@ export default function Dashboard() {
     async (explicitTickers?: string[]) => {
       setIsScanning(true)
       setScanError(null)
+      // Clear stale results so the new CSV scan results aren't buried under old ones
+      if (explicitTickers) setScanResults([])
 
       let tickers = explicitTickers ?? tickerList
 
@@ -96,6 +98,7 @@ export default function Dashboard() {
             if (Array.isArray(ciData.tickers) && ciData.tickers.length > 0) {
               tickers = ciData.tickers
               setTickerList(ciData.tickers)
+              // Do NOT save ChartInk tickers to localStorage — only CSV tickers persist
             }
           }
         } catch {
@@ -206,12 +209,21 @@ export default function Dashboard() {
       </header>
 
       <main className="max-w-screen-xl mx-auto px-4 py-6 flex flex-col gap-6">
+        {!BACKEND && (
+          <div className="bg-yellow-900/30 border border-yellow-600/50 rounded-xl p-3 text-yellow-300 text-sm">
+            ⚠️ <strong>NEXT_PUBLIC_BACKEND_URL</strong> is not set — scans will fail.
+            Set it to your backend URL in Vercel Environment Variables and redeploy.
+          </div>
+        )}
+
         {scanError && (
           <div className="bg-red-900/30 border border-red-500/50 rounded-xl p-4 text-red-300 text-sm">
             <strong>Scan error:</strong> {scanError}
             <br />
             <span className="text-red-400/70 text-xs">
-              Backend unreachable. Make sure FastAPI is running on port 8000.
+              {BACKEND
+                ? `Backend: ${BACKEND} — check if it is running.`
+                : "Set NEXT_PUBLIC_BACKEND_URL to your backend URL."}
             </span>
           </div>
         )}
