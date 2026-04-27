@@ -20,6 +20,7 @@ const DEFAULT_TICKERS = [
 const WATCHLIST_KEY = "swing_alpha_watchlist"
 const RESULTS_KEY = "swing_alpha_scan_results"
 const SCAN_META_KEY = "swing_alpha_scan_meta"
+const TICKER_LIST_KEY = "swing_alpha_ticker_list"
 
 export default function Dashboard() {
   const [scanResults, setScanResults] = useState<StockResult[]>([])
@@ -27,6 +28,7 @@ export default function Dashboard() {
   const [scanStatus, setScanStatus] = useState<string>("")
   const [scanError, setScanError] = useState<string | null>(null)
   const [tickerList, setTickerList] = useState<string[]>(DEFAULT_TICKERS)
+  const [csvMode, setCsvMode] = useState(false)
   const [lastScanned, setLastScanned] = useState<number>(0)
   const [lastScannedAt, setLastScannedAt] = useState<string | null>(null)
 
@@ -55,6 +57,16 @@ export default function Dashboard() {
       const meta = localStorage.getItem(SCAN_META_KEY)
       if (meta) setLastScannedAt(JSON.parse(meta))
     } catch {}
+    try {
+      const storedTickers = localStorage.getItem(TICKER_LIST_KEY)
+      if (storedTickers) {
+        const parsed = JSON.parse(storedTickers)
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setTickerList(parsed)
+          setCsvMode(true)
+        }
+      }
+    } catch {}
   }, [])
 
   const toggleWatchlist = useCallback((ticker: string) => {
@@ -74,8 +86,8 @@ export default function Dashboard() {
 
       let tickers = explicitTickers ?? tickerList
 
-      // When triggered by button/auto-mount (no explicit tickers), fetch fresh from ChartInk first
-      if (!explicitTickers) {
+      // When triggered by button (no explicit tickers) and not in CSV mode, fetch fresh from ChartInk
+      if (!explicitTickers && !csvMode) {
         setScanStatus("Fetching stocks from screener…")
         try {
           const ciRes = await fetch(`${BACKEND}/api/chartink/fetch`, { method: "POST" })
@@ -115,7 +127,7 @@ export default function Dashboard() {
         setScanStatus("")
       }
     },
-    [tickerList]
+    [tickerList, csvMode]
   )
 
 
@@ -160,9 +172,24 @@ export default function Dashboard() {
                 Last scan: {new Date(lastScannedAt).toLocaleString()}
               </span>
             )}
+            {csvMode && (
+              <button
+                onClick={() => {
+                  setCsvMode(false)
+                  setTickerList(DEFAULT_TICKERS)
+                  try { localStorage.removeItem(TICKER_LIST_KEY) } catch {}
+                }}
+                className="text-xs text-indigo-400 hover:text-white border border-indigo-800 hover:border-indigo-500 px-2 py-1 rounded-md transition-colors hidden sm:block"
+                title="Clear CSV — switch back to ChartInk screener"
+              >
+                CSV ({tickerList.length}) ✕
+              </button>
+            )}
             <UploadCSV
               onTickersLoaded={(tickers) => {
                 setTickerList(tickers)
+                setCsvMode(true)
+                try { localStorage.setItem(TICKER_LIST_KEY, JSON.stringify(tickers)) } catch {}
                 triggerScan(tickers)
               }}
             />
@@ -184,10 +211,7 @@ export default function Dashboard() {
             <strong>Scan error:</strong> {scanError}
             <br />
             <span className="text-red-400/70 text-xs">
-              Make sure FastAPI is running:{" "}
-              <code className="bg-red-900/40 px-1 rounded">
-                uvicorn main:app --reload --port 8000
-              </code>
+              Backend unreachable. Make sure FastAPI is running on port 8000.
             </span>
           </div>
         )}

@@ -1,7 +1,23 @@
 import pandas as pd
 from typing import Tuple
 from indicators import compute_avg_volume, find_swing_lows
-from pattern_detector import detect_vcp, detect_bull_flag
+from pattern_detector import (
+    detect_vcp, detect_bull_flag, detect_cup_with_handle,
+    detect_flat_base, detect_double_bottom, detect_ascending_triangle,
+    detect_base_on_base, detect_high_tight_flag,
+)
+
+# Pattern detection priority (highest conviction first)
+_PATTERN_PRIORITY = [
+    ("high_tight_flag", "High Tight Flag",  3.0),
+    ("cup_with_handle",  "Cup with Handle", 3.0),
+    ("vcp",              "VCP",             3.0),
+    ("double_bottom",    "Double Bottom",   2.0),
+    ("bull_flag",        "Bull Flag",       2.0),
+    ("ascending_triangle", "Ascending Triangle", 2.0),
+    ("flat_base",        "Flat Base",       1.5),
+    ("base_on_base",     "Base on Base",    1.5),
+]
 
 
 def _score_trend(current_price: float, e20: float, e44: float, e200: float) -> int:
@@ -14,11 +30,10 @@ def _score_trend(current_price: float, e20: float, e44: float, e200: float) -> i
     return 0
 
 
-def _score_pattern(vcp: dict, flag: dict, current_price: float, e20: float) -> Tuple[float, str]:
-    if vcp["detected"]:
-        return 2, "VCP"
-    if flag["detected"]:
-        return 2, "Bull Flag"
+def _score_pattern(patterns: dict, current_price: float, e20: float) -> Tuple[float, str]:
+    for key, label, score in _PATTERN_PRIORITY:
+        if patterns[key]["detected"]:
+            return score, label
     if current_price > e20:
         return 1, "Loose Structure"
     return 0, "None"
@@ -41,7 +56,6 @@ def _score_fundamentals(fundamentals: dict) -> Tuple[float, float, float, float]
     rev_growth = fundamentals.get("revenue_growth") or 0.0
     earn_growth = fundamentals.get("earnings_growth") or 0.0
     raw_de = fundamentals.get("debt_to_equity")
-    # yfinance returns D/E as a percentage value (e.g. 45.2 → actual ratio 0.452)
     debt_equity = (raw_de / 100.0) if raw_de is not None else 999.0
     inst_holding = fundamentals.get("held_percent_institutions") or 0.0
 
@@ -60,25 +74,23 @@ def _score_fundamentals(fundamentals: dict) -> Tuple[float, float, float, float]
 
 def _compute_entry_sl(
     df: pd.DataFrame,
-    vcp: dict,
-    flag: dict,
+    patterns: dict,
     ema_20_series: pd.Series,
 ) -> Tuple[float, float]:
     closes = df["Close"].values
     current_price = float(closes[-1])
     e20_current = float(ema_20_series.iloc[-1])
 
-    # Entry
-    if vcp["detected"] and vcp["breakout_detected"]:
-        entry = vcp["breakout_level"]
-    elif flag["detected"] and flag["breakout_detected"]:
-        entry = flag["breakout_level"]
-    elif vcp["detected"]:
-        entry = vcp["resistance_level"]
-    elif flag["detected"]:
-        entry = flag["resistance_level"]
-    else:
-        entry = current_price
+    # Entry: use resistance/pivot from highest-priority detected pattern
+    entry = current_price
+    for key, _, _ in _PATTERN_PRIORITY:
+        p = patterns[key]
+        if p["detected"]:
+            if p.get("breakout_detected") and p.get("breakout_level"):
+                entry = p["breakout_level"]
+            elif p.get("resistance_level"):
+                entry = p["resistance_level"]
+            break
 
     # Stop loss: higher of (1% below 20 EMA) or (0.5% below last swing low)
     swing_low_indices = find_swing_lows(pd.Series(closes), window=5)
@@ -108,11 +120,19 @@ def score_stock(ticker: str, df: pd.DataFrame, fundamentals: dict) -> dict:
     e44 = float(ema_44.iloc[-1])
     e200 = float(ema_200.iloc[-1])
 
-    vcp = detect_vcp(df)
-    flag = detect_bull_flag(df, ema_20)
+    patterns = {
+        "vcp":                detect_vcp(df),
+        "bull_flag":          detect_bull_flag(df, ema_20),
+        "cup_with_handle":    detect_cup_with_handle(df),
+        "flat_base":          detect_flat_base(df),
+        "double_bottom":      detect_double_bottom(df),
+        "ascending_triangle": detect_ascending_triangle(df),
+        "base_on_base":       detect_base_on_base(df),
+        "high_tight_flag":    detect_high_tight_flag(df),
+    }
 
     trend_score = _score_trend(current_price, e20, e44, e200)
-    pattern_score, pattern_type = _score_pattern(vcp, flag, current_price, e20)
+    pattern_score, pattern_type = _score_pattern(patterns, current_price, e20)
     volume_score = _score_volume(df)
     growth_score, debt_score, inst_score, fund_score = _score_fundamentals(fundamentals)
 
@@ -125,7 +145,7 @@ def score_stock(ticker: str, df: pd.DataFrame, fundamentals: dict) -> dict:
     else:
         category = "Avoid"
 
-    entry, stop_loss = _compute_entry_sl(df, vcp, flag, ema_20)
+    entry, stop_loss = _compute_entry_sl(df, patterns, ema_20)
 
     rev_growth = fundamentals.get("revenue_growth") or 0.0
     earn_growth = fundamentals.get("earnings_growth") or 0.0
@@ -154,7 +174,14 @@ def score_stock(ticker: str, df: pd.DataFrame, fundamentals: dict) -> dict:
         "earnings_growth_pct": round(earn_growth * 100, 1),
         "debt_to_equity": round(debt_equity_ratio, 2) if debt_equity_ratio is not None else None,
         "institutional_holding_pct": round(inst_holding * 100, 1),
-        "vcp": vcp,
-        "bull_flag": flag,
+        # individual pattern results
+        "vcp":                patterns["vcp"],
+        "bull_flag":          patterns["bull_flag"],
+        "cup_with_handle":    patterns["cup_with_handle"],
+        "flat_base":          patterns["flat_base"],
+        "double_bottom":      patterns["double_bottom"],
+        "ascending_triangle": patterns["ascending_triangle"],
+        "base_on_base":       patterns["base_on_base"],
+        "high_tight_flag":    patterns["high_tight_flag"],
         "fifty_two_week_high": fundamentals.get("fifty_two_week_high"),
     }
