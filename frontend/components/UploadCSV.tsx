@@ -22,7 +22,7 @@ export default function UploadCSV({ onTickersLoaded }: UploadCSVProps) {
     setLoading(true)
 
     try {
-      const text = await file.text()
+      const text = (await file.text()).replace(/^﻿/, "")
       const lines = text.split(/\r?\n/).filter((l) => l.trim())
       if (lines.length === 0) throw new Error("Empty CSV file")
 

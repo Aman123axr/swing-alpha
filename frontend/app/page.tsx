@@ -209,7 +209,7 @@ export default function Dashboard() {
       </header>
 
       <main className="max-w-screen-xl mx-auto px-4 py-6 flex flex-col gap-6">
-        {!BACKEND && (
+        {!BACKEND && process.env.NODE_ENV === "production" && (
           <div className="bg-yellow-900/30 border border-yellow-600/50 rounded-xl p-3 text-yellow-300 text-sm">
             ⚠️ <strong>NEXT_PUBLIC_BACKEND_URL</strong> is not set — scans will fail.
             Set it to your backend URL in Vercel Environment Variables and redeploy.
@@ -232,7 +232,9 @@ export default function Dashboard() {
           <div className="text-center py-20 text-gray-400">
             <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-4 text-indigo-400" />
             <p className="text-base font-medium">{scanStatus || "Preparing scan…"}</p>
-            <p className="text-sm text-gray-600 mt-1">This may take a few minutes for 500 stocks</p>
+            <p className="text-sm text-gray-600 mt-1">
+              {csvMode ? `Using your CSV list (${tickerList.length} stocks)` : "Fetching from ChartInk screener…"}
+            </p>
           </div>
         )}
 
