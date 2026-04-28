@@ -1,6 +1,17 @@
+import datetime
 import yfinance as yf
 import pandas as pd
 from typing import Optional
+
+
+def _drop_todays_partial_bar(df: pd.DataFrame) -> pd.DataFrame:
+    """Remove today's bar so scores are based only on complete EOD sessions."""
+    if df.empty or len(df) < 2:
+        return df
+    last_date = pd.Timestamp(df.index[-1]).date()
+    if last_date == datetime.date.today():
+        return df.iloc[:-1]
+    return df
 
 
 def normalize_ticker(ticker: str) -> str:
@@ -18,7 +29,7 @@ def fetch_ohlcv(ticker: str, period: str = "1y") -> Optional[pd.DataFrame]:
             return None
         df = df[["Open", "High", "Low", "Close", "Volume"]].copy()
         df.dropna(inplace=True)
-        return df
+        return _drop_todays_partial_bar(df)
     except Exception:
         return None
 
@@ -41,12 +52,14 @@ def fetch_ohlcv_batch(tickers: list, period: str = "1y") -> dict:
         if not raw.empty:
             if len(tickers) == 1:
                 df = raw[["Open", "High", "Low", "Close", "Volume"]].dropna()
+                df = _drop_todays_partial_bar(df)
                 if len(df) >= 30:
                     result[tickers[0]] = df
             else:
                 for ticker in tickers:
                     try:
                         df = raw[ticker][["Open", "High", "Low", "Close", "Volume"]].dropna()
+                        df = _drop_todays_partial_bar(df)
                         if len(df) >= 30:
                             result[ticker] = df
                     except Exception:
